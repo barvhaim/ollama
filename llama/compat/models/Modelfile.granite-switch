@@ -1,0 +1,29 @@
+# Modelfile for Granite Switch (dense Granite-4.1 + 12 embedded LoRA adapters,
+# selected per-token by control tokens).
+#
+# The GGUF carries everything Ollama needs:
+#   - the custom `granite-switch.*` metadata keys (num_adapters, adapter_token_ids,
+#     adapter_substitute_token_ids, adapter_ranks, max_lora_rank),
+#   - the stacked LoRA tensors (blk.N.attn_qkv.lora_a_q ... dim = 12 adapters + 1 base slot),
+#   - the tokenizer (incl. the control tokens) and the embedded chat template.
+#
+# `ollama create` preserves all of that verbatim; the `granite-switch` arch is
+# validated at RUN time by the patched llama-server runner. So this Modelfile is
+# intentionally minimal — no hand-authored TEMPLATE, we rely on the GGUF's
+# embedded tokenizer.chat_template.
+#
+# Build the GGUF with this repo's llama.cpp fork converter, or reuse the verified
+# gs-f16.gguf (842 tensors, stacked dim 13). Point FROM at wherever it lives.
+#
+# Usage:
+#   ollama create granite-switch -f Modelfile.granite-switch
+#   ollama run granite-switch
+#
+# For the mid-sequence adapter-switch demos, use the raw /api/generate endpoint
+# (raw:true) so control tokens reach the model untemplated — see OLLAMA.md.
+
+FROM ./gs-f16.gguf
+
+# Greedy decode makes the adapter behaviour deterministic and easy to compare
+# against the llama.cpp `llama-completion --temp 0` reference.
+PARAMETER temperature 0

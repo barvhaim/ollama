@@ -1,0 +1,282 @@
+diff --git a/src/llama-arch.cpp b/src/llama-arch.cpp
+index 4a52d97..445820d 100644
+--- a/src/llama-arch.cpp
++++ b/src/llama-arch.cpp
+@@ -99,6 +99,7 @@ static const std::map<llm_arch, const char *> LLM_ARCH_NAMES = {
+     { LLM_ARCH_GRANITE,          "granite"          },
+     { LLM_ARCH_GRANITE_MOE,      "granitemoe"       },
+     { LLM_ARCH_GRANITE_HYBRID,   "granitehybrid"    },
++    { LLM_ARCH_GRANITE_SWITCH,   "granite-switch"   },
+     { LLM_ARCH_CHAMELEON,        "chameleon"        },
+     { LLM_ARCH_WAVTOKENIZER_DEC, "wavtokenizer-dec" },
+     { LLM_ARCH_PLM,              "plm"              },
+@@ -213,6 +214,11 @@ static const std::map<llm_kv, const char *> LLM_KV_NAMES = {
+     { LLM_KV_TIME_DECAY_EXTRA_DIM,              "%s.time_decay_extra_dim"              },
+     { LLM_KV_RESIDUAL_SCALE,                    "%s.residual_scale"                    },
+     { LLM_KV_EMBEDDING_SCALE,                   "%s.embedding_scale"                   },
++    { LLM_KV_NUM_ADAPTERS,                      "%s.num_adapters"                      },
++    { LLM_KV_ADAPTER_TOKEN_IDS,                 "%s.adapter_token_ids"                 },
++    { LLM_KV_ADAPTER_SUBSTITUTE_TOKEN_IDS,      "%s.adapter_substitute_token_ids"      },
++    { LLM_KV_ADAPTER_RANKS,                     "%s.adapter_ranks"                     },
++    { LLM_KV_MAX_LORA_RANK,                     "%s.max_lora_rank"                     },
+     { LLM_KV_TOKEN_SHIFT_COUNT,                 "%s.token_shift_count"                 },
+     { LLM_KV_INTERLEAVE_MOE_LAYER_STEP,         "%s.interleave_moe_layer_step"         },
+     { LLM_KV_FULL_ATTENTION_INTERVAL,           "%s.full_attention_interval"           },
+@@ -569,6 +575,21 @@ static const std::map<llm_tensor, const char *> LLM_TENSOR_NAMES = {
+     { LLM_TENSOR_MASKED_EMBD_ORDERING,                   "masked_embd_ordering" },
+     { LLM_TENSOR_FC,                                     "fc" },
+     { LLM_TENSOR_D2T,                                    "d2t" },
++    // Granite Switch: per-token embedded LoRA adapters (no ".weight" suffix on disk)
++    { LLM_TENSOR_ATTN_QKV_LORA_A_Q,                      "blk.%d.attn_qkv.lora_a_q" },
++    { LLM_TENSOR_ATTN_QKV_LORA_B_Q,                      "blk.%d.attn_qkv.lora_b_q" },
++    { LLM_TENSOR_ATTN_QKV_LORA_A_K,                      "blk.%d.attn_qkv.lora_a_k" },
++    { LLM_TENSOR_ATTN_QKV_LORA_B_K,                      "blk.%d.attn_qkv.lora_b_k" },
++    { LLM_TENSOR_ATTN_QKV_LORA_A_V,                      "blk.%d.attn_qkv.lora_a_v" },
++    { LLM_TENSOR_ATTN_QKV_LORA_B_V,                      "blk.%d.attn_qkv.lora_b_v" },
++    { LLM_TENSOR_ATTN_OUT_LORA_A,                        "blk.%d.attn_output.lora_a" },
++    { LLM_TENSOR_ATTN_OUT_LORA_B,                        "blk.%d.attn_output.lora_b" },
++    { LLM_TENSOR_FFN_GATE_LORA_A,                        "blk.%d.ffn_gate.lora_a" },
++    { LLM_TENSOR_FFN_GATE_LORA_B,                        "blk.%d.ffn_gate.lora_b" },
++    { LLM_TENSOR_FFN_UP_LORA_A,                          "blk.%d.ffn_up.lora_a" },
++    { LLM_TENSOR_FFN_UP_LORA_B,                          "blk.%d.ffn_up.lora_b" },
++    { LLM_TENSOR_FFN_DOWN_LORA_A,                        "blk.%d.ffn_down.lora_a" },
++    { LLM_TENSOR_FFN_DOWN_LORA_B,                        "blk.%d.ffn_down.lora_b" },
+ };
+ 
+ // declare information about the model weight tensors:
+@@ -798,6 +819,21 @@ static const std::map<llm_tensor, llm_tensor_info> LLM_TENSOR_INFOS = {
+     // eagle3
+     {LLM_TENSOR_FC,                         {LLM_TENSOR_LAYER_OUTPUT,    GGML_OP_MUL_MAT}},
+     {LLM_TENSOR_D2T,                        {LLM_TENSOR_LAYER_OUTPUT,    GGML_OP_GET_ROWS}},
++    // granite-switch: per-token embedded LoRA adapters (selected via mul_mat_id)
++    {LLM_TENSOR_ATTN_QKV_LORA_A_Q,          {LLM_TENSOR_LAYER_REPEATING, GGML_OP_MUL_MAT_ID}},
++    {LLM_TENSOR_ATTN_QKV_LORA_B_Q,          {LLM_TENSOR_LAYER_REPEATING, GGML_OP_MUL_MAT_ID}},
++    {LLM_TENSOR_ATTN_QKV_LORA_A_K,          {LLM_TENSOR_LAYER_REPEATING, GGML_OP_MUL_MAT_ID}},
++    {LLM_TENSOR_ATTN_QKV_LORA_B_K,          {LLM_TENSOR_LAYER_REPEATING, GGML_OP_MUL_MAT_ID}},
++    {LLM_TENSOR_ATTN_QKV_LORA_A_V,          {LLM_TENSOR_LAYER_REPEATING, GGML_OP_MUL_MAT_ID}},
++    {LLM_TENSOR_ATTN_QKV_LORA_B_V,          {LLM_TENSOR_LAYER_REPEATING, GGML_OP_MUL_MAT_ID}},
++    {LLM_TENSOR_ATTN_OUT_LORA_A,            {LLM_TENSOR_LAYER_REPEATING, GGML_OP_MUL_MAT_ID}},
++    {LLM_TENSOR_ATTN_OUT_LORA_B,            {LLM_TENSOR_LAYER_REPEATING, GGML_OP_MUL_MAT_ID}},
++    {LLM_TENSOR_FFN_GATE_LORA_A,            {LLM_TENSOR_LAYER_REPEATING, GGML_OP_MUL_MAT_ID}},
++    {LLM_TENSOR_FFN_GATE_LORA_B,            {LLM_TENSOR_LAYER_REPEATING, GGML_OP_MUL_MAT_ID}},
++    {LLM_TENSOR_FFN_UP_LORA_A,              {LLM_TENSOR_LAYER_REPEATING, GGML_OP_MUL_MAT_ID}},
++    {LLM_TENSOR_FFN_UP_LORA_B,              {LLM_TENSOR_LAYER_REPEATING, GGML_OP_MUL_MAT_ID}},
++    {LLM_TENSOR_FFN_DOWN_LORA_A,            {LLM_TENSOR_LAYER_REPEATING, GGML_OP_MUL_MAT_ID}},
++    {LLM_TENSOR_FFN_DOWN_LORA_B,            {LLM_TENSOR_LAYER_REPEATING, GGML_OP_MUL_MAT_ID}},
+ };
+ 
+ LLM_KV::LLM_KV(llm_arch arch, const char * suffix) : arch(arch), suffix(suffix) {}
+diff --git a/src/llama-arch.h b/src/llama-arch.h
+index 989da06..472605e 100644
+--- a/src/llama-arch.h
++++ b/src/llama-arch.h
+@@ -104,6 +104,7 @@ enum llm_arch {
+     LLM_ARCH_GRANITE,
+     LLM_ARCH_GRANITE_MOE,
+     LLM_ARCH_GRANITE_HYBRID,
++    LLM_ARCH_GRANITE_SWITCH,
+     LLM_ARCH_CHAMELEON,
+     LLM_ARCH_WAVTOKENIZER_DEC,
+     LLM_ARCH_PLM,
+@@ -218,6 +219,11 @@ enum llm_kv {
+     LLM_KV_TIME_DECAY_EXTRA_DIM,
+     LLM_KV_RESIDUAL_SCALE,
+     LLM_KV_EMBEDDING_SCALE,
++    LLM_KV_NUM_ADAPTERS,
++    LLM_KV_ADAPTER_TOKEN_IDS,
++    LLM_KV_ADAPTER_SUBSTITUTE_TOKEN_IDS,
++    LLM_KV_ADAPTER_RANKS,
++    LLM_KV_MAX_LORA_RANK,
+     LLM_KV_TOKEN_SHIFT_COUNT,
+     LLM_KV_INTERLEAVE_MOE_LAYER_STEP,
+     LLM_KV_FULL_ATTENTION_INTERVAL,
+@@ -577,6 +583,21 @@ enum llm_tensor {
+     LLM_TENSOR_MASKED_EMBD_ORDERING,
+     LLM_TENSOR_FC,
+     LLM_TENSOR_D2T,
++    // Granite Switch: per-token embedded LoRA adapters (stacked over N = num_adapters + 1)
++    LLM_TENSOR_ATTN_QKV_LORA_A_Q,
++    LLM_TENSOR_ATTN_QKV_LORA_B_Q,
++    LLM_TENSOR_ATTN_QKV_LORA_A_K,
++    LLM_TENSOR_ATTN_QKV_LORA_B_K,
++    LLM_TENSOR_ATTN_QKV_LORA_A_V,
++    LLM_TENSOR_ATTN_QKV_LORA_B_V,
++    LLM_TENSOR_ATTN_OUT_LORA_A,
++    LLM_TENSOR_ATTN_OUT_LORA_B,
++    LLM_TENSOR_FFN_GATE_LORA_A,
++    LLM_TENSOR_FFN_GATE_LORA_B,
++    LLM_TENSOR_FFN_UP_LORA_A,
++    LLM_TENSOR_FFN_UP_LORA_B,
++    LLM_TENSOR_FFN_DOWN_LORA_A,
++    LLM_TENSOR_FFN_DOWN_LORA_B,
+ };
+ 
+ 
+diff --git a/src/llama-model.cpp b/src/llama-model.cpp
+index c528755..bfab8f1 100644
+--- a/src/llama-model.cpp
++++ b/src/llama-model.cpp
+@@ -225,6 +225,8 @@ static llama_model * llama_model_mapping(llm_arch arch, const llama_model_params
+             return new llama_model_granite(params);
+         case LLM_ARCH_GRANITE_MOE:
+             return new llama_model_granite_moe(params);
++        case LLM_ARCH_GRANITE_SWITCH:
++            return new llama_model_granite_switch(params);
+         case LLM_ARCH_MINICPM:
+             return new llama_model_minicpm(params);
+         case LLM_ARCH_GRANITE_HYBRID:
+@@ -1861,6 +1863,7 @@ void llama_model::print_info() const {
+                 arch == LLM_ARCH_GRANITE ||
+                 arch == LLM_ARCH_GRANITE_MOE ||
+                 arch == LLM_ARCH_GRANITE_HYBRID ||
++                arch == LLM_ARCH_GRANITE_SWITCH ||
+                 arch == LLM_ARCH_NEMOTRON_H_MOE) {
+             LLAMA_LOG_INFO("%s: f_embedding_scale     = %f\n", __func__, hparams.f_embedding_scale);
+             LLAMA_LOG_INFO("%s: f_residual_scale      = %f\n", __func__, hparams.f_residual_scale);
+@@ -2407,6 +2410,7 @@ llama_rope_type llama_model_rope_type(const llama_model * model) {
+         case LLM_ARCH_GRANITE:
+         case LLM_ARCH_GRANITE_MOE:
+         case LLM_ARCH_GRANITE_HYBRID:
++        case LLM_ARCH_GRANITE_SWITCH:
+         case LLM_ARCH_CHAMELEON:
+         case LLM_ARCH_BAILINGMOE:
+         case LLM_ARCH_NEO_BERT:
+diff --git a/src/llama-model.h b/src/llama-model.h
+index f4718f6..b78ca9d 100644
+--- a/src/llama-model.h
++++ b/src/llama-model.h
+@@ -220,6 +220,30 @@ struct llama_layer_nextn {
+     struct ggml_tensor * shared_head_norm      = nullptr;
+ };
+ 
++// granite-switch: per-token embedded LoRA adapters, stacked across N = num_adapters + 1
++// slots in dim 2 (slot 0 is zero-filled so base tokens add an exact-zero delta).
++// A: {n_embd_in, max_lora_rank, N}   B: {max_lora_rank, n_embd_out, N}
++// 7 injection sites (q, k, v, o, gate, up, down), each with an A and a B = 14 tensors.
++struct llama_layer_switch_lora {
++    // attention: q/k/v are separate slices of the fused qkv projection (different out dims)
++    struct ggml_tensor * a_q    = nullptr;
++    struct ggml_tensor * b_q    = nullptr;
++    struct ggml_tensor * a_k    = nullptr;
++    struct ggml_tensor * b_k    = nullptr;
++    struct ggml_tensor * a_v    = nullptr;
++    struct ggml_tensor * b_v    = nullptr;
++    struct ggml_tensor * a_o    = nullptr;
++    struct ggml_tensor * b_o    = nullptr;
++
++    // feed-forward
++    struct ggml_tensor * a_gate = nullptr;
++    struct ggml_tensor * b_gate = nullptr;
++    struct ggml_tensor * a_up   = nullptr;
++    struct ggml_tensor * b_up   = nullptr;
++    struct ggml_tensor * a_down = nullptr;
++    struct ggml_tensor * b_down = nullptr;
++};
++
+ struct llama_layer {
+     // normalization
+     struct ggml_tensor * attn_norm       = nullptr;
+@@ -504,6 +528,8 @@ struct llama_layer {
+     struct llama_layer_shortconv shortconv;
+ 
+     struct llama_layer_nextn nextn;
++
++    struct llama_layer_switch_lora switch_lora;
+ };
+ 
+ struct llama_device {
+diff --git a/src/models/models.h b/src/models/models.h
+index 2ac8415..8d96bcf 100644
+--- a/src/models/models.h
++++ b/src/models/models.h
+@@ -1405,6 +1405,90 @@ struct llama_model_granite_moe : public llama_model_base {
+ };
+ 
+ 
++struct llama_model_granite_switch : public llama_model_base {
++    llama_model_granite_switch(const struct llama_model_params & params) : llama_model_base(params) {}
++    void load_arch_hparams(llama_model_loader & ml) override;
++    void load_arch_tensors(llama_model_loader & ml) override;
++
++    // --- per-token switch metadata (read from GGUF in load_arch_hparams) ---
++    uint32_t n_adapters    = 0;  // number of real adapters (excludes the zero slot)
++    uint32_t n_slots       = 0;  // n_adapters + 1 (slot 0 = base/zero delta)
++    uint32_t max_lora_rank = 0;
++
++    // token id -> sticky adapter index (1 + adapter, so slot 0 stays "base")
++    std::unordered_map<llama_token, int32_t> control_token_to_index;
++    // control token id -> substitute token id (token-exchange before embedding)
++    std::unordered_map<llama_token, llama_token> control_token_to_substitute;
++
++    // POC: single-sequence sticky adapter state. The most recent control index
++    // seen, carried across ubatches within one decode. Reset to 0 when a ubatch
++    // contains sequence position 0 (start of a fresh prompt). This is sufficient
++    // for llama-cli / the smoke + parity tests; a full multi-sequence
++    // (reset-on-seq_rm) implementation is deferred — see the [[llamacpp-poc-scope]]
++    // note. `mutable` because set_input runs from a const-model graph context.
++    mutable int32_t poc_sticky_index = 0;
++
++    struct graph : public llm_graph_context {
++        graph(const llama_model & model, const llm_graph_params & params);
++
++    private:
++        // per-token switched LoRA delta only: B_a·(A_a·x), selected per token.
++        // Returns {n_out, n_tokens}. Used for the fused-qkv slices where the base
++        // term is already computed.
++        ggml_tensor * build_switched_lora_delta(
++                  ggml_tensor * lora_a,  // {n_in, max_lora_rank, N}
++                  ggml_tensor * lora_b,  // {max_lora_rank, n_out, N}
++                  ggml_tensor * cur,     // {n_in, n_tokens}
++                  ggml_tensor * ids);    // {n_tokens} I32 adapter index per token
++
++        // per-token switched LoRA: y = W·x + B_a·(A_a·x), selected per token via mul_mat_id
++        ggml_tensor * build_switched_lora_mm(
++                  ggml_tensor * w,       // base weight (plain 2D)
++                  ggml_tensor * lora_a,  // {n_in, max_lora_rank, N}
++                  ggml_tensor * lora_b,  // {max_lora_rank, n_out, N}
++                  ggml_tensor * cur,     // {n_in, n_tokens}
++                  ggml_tensor * ids);    // {n_tokens} I32 adapter index per token
++
++        ggml_tensor * build_attention_layer(
++                  ggml_tensor             * cur,
++                  ggml_tensor             * inp_pos,
++                  ggml_tensor             * adapter_ids,
++                  llm_graph_input_attn_kv * inp_attn,
++            const llama_model             & model,
++            const int64_t                 n_embd_head,
++            const int                     il);
++
++        ggml_tensor * build_layer_ffn(
++                  ggml_tensor       * cur,
++                  ggml_tensor       * inpSA,
++                  ggml_tensor       * adapter_ids,
++            const llama_model       & model,
++            const int                 il);
++    };
++
++    std::unique_ptr<llm_graph_context> build_arch_graph(const llm_graph_params & params) const override;
++};
++
++
++// Custom graph input for the per-token switch. In set_input it scans the ubatch,
++// computes the sticky adapter index per token (writing adapter_ids), and rewrites
++// control-token ids to their substitute ids (writing sub_tokens) — the
++// token-exchange. Both tensors are I32 [n_tokens]. can_reuse() returns false so
++// these are recomputed every ubatch.
++class llm_graph_input_switch : public llm_graph_input_i {
++public:
++    llm_graph_input_switch(const llama_model_granite_switch & smodel) : smodel(smodel) {}
++    virtual ~llm_graph_input_switch() = default;
++
++    void set_input(const llama_ubatch * ubatch) override;
++
++    ggml_tensor * sub_tokens  = nullptr; // I32 [n_tokens] control-substituted token ids
++    ggml_tensor * adapter_ids = nullptr; // I32 [n_tokens] sticky per-token adapter index
++
++    const llama_model_granite_switch & smodel;
++};
++
++
+ struct llama_model_minicpm : public llama_model_base {
+     llama_model_minicpm(const struct llama_model_params & params) : llama_model_base(params) {}
+     void load_arch_hparams(llama_model_loader & ml) override;
