@@ -21,13 +21,26 @@ graph. No fork of llama.cpp is pulled — Ollama still FetchContents the pinned
 ### How the switch works (one paragraph)
 
 The 12 adapters are stored as **stacked** LoRA tensors (stacked dim = 12 + 1; slot 0
-is a zero delta for base tokens). At runtime `llm_graph_input_switch::set_input`
-computes, CPU-side, a **sticky per-token adapter index** (each position takes the
-index of the most recent control token at-or-before it) and **substitutes** each
-control token's id before embedding. The decoder then adds the per-token LoRA delta
-on qkv/o/gate/up/down via `ggml_mul_mat_id` over the stacked tensors (MoE-style
-indexed matmul, repurposed: "expert = adapter"). B is pre-scaled by `alpha/rank` at
-compose time, so the runtime LoRA scale is 1.0.
+is a zero delta for base tokens). The per-token adapter index is recovered **in the
+graph** by a single-head causal **router attention** — a faithful copy of the vLLM
+(`single.py`) / HF `SingleSwitch` mechanism. `llm_graph_input_switch::set_input` only
+fills per-token signals (router K = ±gain for control/normal, router V = the adapter
+slot, router Q = 1) and **substitutes** each control token's id before embedding; the
+causal softmax over those signals then yields each token's slot. That router K/V lives
+in the model's KV cache at an extra layer (`hparams.router_layer == n_layer`), so the
+selection is **per-sequence** — concurrent requests are isolated with no global state
+to leak (the bug the prior CPU-side sticky index had). The decoder then adds the
+per-token LoRA delta on qkv/o/gate/up/down via `ggml_mul_mat_id` over the stacked
+tensors (MoE-style indexed matmul, repurposed: "expert = adapter"). B is pre-scaled by
+`alpha/rank` at compose time, so the runtime LoRA scale is 1.0.
+
+**Single-switch contract (known limitation).** Like vLLM/HF, the router uses flat gain
+(no recency), so within one sequence an adapter, once fired by a control token, stays
+selected for the rest of that sequence — there is "no mechanism to transition back to
+base mid-sequence" (vLLM's own wording). vLLM/HF never observe this because each served
+request is a fresh sequence; a chat client that continues one KV cache across turns
+(`ollama run`) carries the selection into later turns. To get base behavior in a new
+turn, start a fresh sequence.
 
 ## Build & run
 
