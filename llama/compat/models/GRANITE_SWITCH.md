@@ -4,7 +4,7 @@ Run **Granite Switch** — a dense Granite-4.1 model with **12 embedded LoRA ada
 selected per-token by control tokens** — via real `ollama run`.
 
 This is added the same way Ollama adds its own custom models (the `laguna`
-precedent): a **compat patch** that registers the `granite-switch` arch into the
+precedent): a **compat patch** that registers the `graniteswitch` arch into the
 pinned llama.cpp source, plus a **model `.cpp`** that implements the switched-LoRA
 graph. No fork of llama.cpp is pulled — Ollama still FetchContents the pinned
 `LLAMA_CPP_VERSION` (`b9672`) and applies our patch on top.
@@ -13,7 +13,7 @@ graph. No fork of llama.cpp is pulled — Ollama still FetchContents the pinned
 
 | File | Purpose |
 |------|---------|
-| `003-llama-cpp-granite-switch.patch` | Registers the `granite-switch` arch into fetched llama.cpp: arch enum + name, 5 KV keys, 14 stacked-LoRA tensor enums/names/infos, model dispatch + Granite scale/rope wiring, the `llama_layer_switch_lora` struct, and the `llama_model_granite_switch` / `llm_graph_input_switch` decls in `models.h`. |
+| `003-llama-cpp-granite-switch.patch` | Registers the `graniteswitch` arch into fetched llama.cpp: arch enum + name, 4 KV keys, 14 stacked-LoRA tensor enums/names/infos, model dispatch + Granite scale/rope wiring, the `llama_layer_switch_lora` struct, and the `llama_model_granite_switch` / `llm_graph_input_switch` decls in `models.h`. |
 | `granite_switch.cpp` | The switched-LoRA implementation: `load_arch_hparams`, `load_arch_tensors`, and `build_arch_graph`. Identical to the llama.cpp fork's `src/models/granite_switch.cpp` except the include is `"models/models.h"` (Ollama compat layout). Auto-compiled by the `models/*.cpp` glob. |
 | `Modelfile.granite-switch` | Minimal `FROM ./gs-f16.gguf` + `temperature 0`. Relies on the GGUF's embedded tokenizer/chat-template. |
 | `granite-switch-ollama-verify.sh` | Build + convert + create + demo, on Vela (CPU/CUDA) or Mac (Metal). |
@@ -73,7 +73,7 @@ The converter lives in the llama.cpp fork, not here. Either:
   `PYTHONPATH=gguf-py python convert_hf_to_gguf.py <hf_dir> --outfile gs-f16.gguf --outtype f16`
   (see that repo's `granite-switch-mac-demo.sh`).
 
-`ollama create` preserves all GGUF metadata (the custom `granite-switch.*` keys, the
+`ollama create` preserves all GGUF metadata (the custom `graniteswitch.*` keys, the
 stacked LoRA tensors, and the tokenizer/chat-template) verbatim. The arch is validated
 at **run** time by the patched llama-server runner.
 

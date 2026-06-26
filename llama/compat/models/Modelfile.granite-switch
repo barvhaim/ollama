@@ -2,12 +2,12 @@
 # selected per-token by control tokens).
 #
 # The GGUF carries everything Ollama needs:
-#   - the custom `granite-switch.*` metadata keys (num_adapters, adapter_token_ids,
-#     adapter_substitute_token_ids, adapter_ranks, max_lora_rank),
+#   - the custom `graniteswitch.*` metadata keys (num_adapters, adapter_token_ids,
+#     adapter_substitute_token_ids, max_lora_rank),
 #   - the stacked LoRA tensors (blk.N.attn_qkv.lora_a_q ... dim = 12 adapters + 1 base slot),
 #   - the tokenizer (incl. the control tokens) and the embedded chat template.
 #
-# `ollama create` preserves all of that verbatim; the `granite-switch` arch is
+# `ollama create` preserves all of that verbatim; the `graniteswitch` arch is
 # validated at RUN time by the patched llama-server runner. So this Modelfile is
 # intentionally minimal — no hand-authored TEMPLATE, we rely on the GGUF's
 # embedded tokenizer.chat_template.

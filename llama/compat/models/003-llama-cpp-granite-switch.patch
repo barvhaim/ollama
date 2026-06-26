@@ -6,23 +6,22 @@ index 4a52d97..445820d 100644
      { LLM_ARCH_GRANITE,          "granite"          },
      { LLM_ARCH_GRANITE_MOE,      "granitemoe"       },
      { LLM_ARCH_GRANITE_HYBRID,   "granitehybrid"    },
-+    { LLM_ARCH_GRANITE_SWITCH,   "granite-switch"   },
++    { LLM_ARCH_GRANITE_SWITCH,   "graniteswitch"    },
      { LLM_ARCH_CHAMELEON,        "chameleon"        },
      { LLM_ARCH_WAVTOKENIZER_DEC, "wavtokenizer-dec" },
      { LLM_ARCH_PLM,              "plm"              },
-@@ -213,6 +214,11 @@ static const std::map<llm_kv, const char *> LLM_KV_NAMES = {
+@@ -213,6 +214,10 @@ static const std::map<llm_kv, const char *> LLM_KV_NAMES = {
      { LLM_KV_TIME_DECAY_EXTRA_DIM,              "%s.time_decay_extra_dim"              },
      { LLM_KV_RESIDUAL_SCALE,                    "%s.residual_scale"                    },
      { LLM_KV_EMBEDDING_SCALE,                   "%s.embedding_scale"                   },
 +    { LLM_KV_NUM_ADAPTERS,                      "%s.num_adapters"                      },
 +    { LLM_KV_ADAPTER_TOKEN_IDS,                 "%s.adapter_token_ids"                 },
 +    { LLM_KV_ADAPTER_SUBSTITUTE_TOKEN_IDS,      "%s.adapter_substitute_token_ids"      },
-+    { LLM_KV_ADAPTER_RANKS,                     "%s.adapter_ranks"                     },
 +    { LLM_KV_MAX_LORA_RANK,                     "%s.max_lora_rank"                     },
      { LLM_KV_TOKEN_SHIFT_COUNT,                 "%s.token_shift_count"                 },
      { LLM_KV_INTERLEAVE_MOE_LAYER_STEP,         "%s.interleave_moe_layer_step"         },
      { LLM_KV_FULL_ATTENTION_INTERVAL,           "%s.full_attention_interval"           },
-@@ -569,6 +575,21 @@ static const std::map<llm_tensor, const char *> LLM_TENSOR_NAMES = {
+@@ -569,6 +574,21 @@ static const std::map<llm_tensor, const char *> LLM_TENSOR_NAMES = {
      { LLM_TENSOR_MASKED_EMBD_ORDERING,                   "masked_embd_ordering" },
      { LLM_TENSOR_FC,                                     "fc" },
      { LLM_TENSOR_D2T,                                    "d2t" },
@@ -44,7 +43,7 @@ index 4a52d97..445820d 100644
  };
  
  // declare information about the model weight tensors:
-@@ -798,6 +819,21 @@ static const std::map<llm_tensor, llm_tensor_info> LLM_TENSOR_INFOS = {
+@@ -798,6 +818,21 @@ static const std::map<llm_tensor, llm_tensor_info> LLM_TENSOR_INFOS = {
      // eagle3
      {LLM_TENSOR_FC,                         {LLM_TENSOR_LAYER_OUTPUT,    GGML_OP_MUL_MAT}},
      {LLM_TENSOR_D2T,                        {LLM_TENSOR_LAYER_OUTPUT,    GGML_OP_GET_ROWS}},
@@ -78,19 +77,18 @@ index 989da06..472605e 100644
      LLM_ARCH_CHAMELEON,
      LLM_ARCH_WAVTOKENIZER_DEC,
      LLM_ARCH_PLM,
-@@ -218,6 +219,11 @@ enum llm_kv {
+@@ -218,6 +219,10 @@ enum llm_kv {
      LLM_KV_TIME_DECAY_EXTRA_DIM,
      LLM_KV_RESIDUAL_SCALE,
      LLM_KV_EMBEDDING_SCALE,
 +    LLM_KV_NUM_ADAPTERS,
 +    LLM_KV_ADAPTER_TOKEN_IDS,
 +    LLM_KV_ADAPTER_SUBSTITUTE_TOKEN_IDS,
-+    LLM_KV_ADAPTER_RANKS,
 +    LLM_KV_MAX_LORA_RANK,
      LLM_KV_TOKEN_SHIFT_COUNT,
      LLM_KV_INTERLEAVE_MOE_LAYER_STEP,
      LLM_KV_FULL_ATTENTION_INTERVAL,
-@@ -577,6 +583,21 @@ enum llm_tensor {
+@@ -577,6 +582,21 @@ enum llm_tensor {
      LLM_TENSOR_MASKED_EMBD_ORDERING,
      LLM_TENSOR_FC,
      LLM_TENSOR_D2T,
